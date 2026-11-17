@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>滅びの呪文</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{height:100%;overflow:hidden;background:#0d1426;color:#f5ecd7;font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif}
+button,input{font-family:inherit}
+button{border:0;cursor:pointer}
+.scr{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:18px}
+.scr.on{display:flex}
+#title{background:radial-gradient(ellipse at 50% 30%,#2b4a7a 0%,#0d1426 70%)}
+h1{font-size:clamp(44px,13vw,92px);letter-spacing:.12em;color:#fff4d6;text-shadow:0 0 18px rgba(255,220,150,.6),0 4px 0 #3a2a10;font-weight:900}
+.sub{font-size:15px;color:#c9bfa6;text-align:center;line-height:1.8}
+.btn{background:#f5ecd7;color:#1b2a4a;font-weight:900;font-size:18px;padding:13px 26px;border-radius:999px;box-shadow:0 4px 0 #8a7a55}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #8a7a55}
+.btn.ghost{background:transparent;color:#f5ecd7;border:2px solid #8a7a55;box-shadow:none}
+.btn.fire{background:linear-gradient(#ffe7a0,#ffb04a);color:#3a1a00;box-shadow:0 4px 0 #8a4a10,0 0 24px rgba(255,180,80,.55)}
+.btn:disabled{opacity:.4}
+.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center}
+/* ステージ */
+#stage{padding:0;gap:0;background:#000}
+#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#castBar{position:absolute;left:0;right:0;bottom:0;padding:12px 14px calc(14px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;background:linear-gradient(transparent,rgba(5,8,20,.85) 40%)}
+#spell{flex:1;min-width:0;font-size:22px;font-weight:900;padding:12px 14px;border-radius:14px;border:2px solid #8a7a55;background:rgba(10,14,30,.85);color:#fff4d6;text-align:center;letter-spacing:.1em}
+#spell::placeholder{color:#7a7058;letter-spacing:0;font-size:16px}
+#topBar{position:absolute;left:0;right:0;top:0;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+#topBar button{background:rgba(10,14,30,.7);color:#f5ecd7;border:1.5px solid #8a7a55;border-radius:999px;padding:6px 14px;font-size:14px;font-weight:700}
+#hint{position:absolute;left:0;right:0;bottom:86px;text-align:center;font-size:13px;color:#e8dcc0;text-shadow:0 1px 4px #000;pointer-events:none}
+/* 結果 */
+#res{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);opacity:0;pointer-events:none;transition:all .35s;width:min(92vw,440px);max-height:92vh;overflow:auto;
+     background:rgba(12,16,32,.93);border:2px solid #c9a95a;border-radius:20px;padding:18px 18px 16px;text-align:center;box-shadow:0 0 40px rgba(0,0,0,.6)}
+#res.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+#res .sp{font-size:30px;font-weight:900;letter-spacing:.12em;color:#fff4d6}
+#res .pct{font-size:64px;font-weight:900;line-height:1;color:#ffcf6a;text-shadow:0 0 16px rgba(255,190,80,.6);margin-top:6px}
+#res .pct small{font-size:22px}
+#res .rank{font-size:20px;font-weight:900;margin:4px 0 10px}
+.bars{display:flex;flex-direction:column;gap:6px;text-align:left;margin:6px 0 10px}
+.bar{display:grid;grid-template-columns:4.5em 1fr 2.4em;gap:8px;align-items:center;font-size:14px}
+.bar i{display:block;height:10px;border-radius:5px;background:#2a3350;overflow:hidden}
+.bar i b{display:block;height:100%;background:linear-gradient(90deg,#ffb04a,#ffe7a0)}
+.bar span{text-align:right;font-weight:900}
+.why{font-size:13px;line-height:1.7;color:#d9cfb5;text-align:left;background:rgba(255,255,255,.05);border-radius:12px;padding:8px 12px;margin-bottom:12px}
+.why div::before{content:"・"}
+#big{position:absolute;left:0;right:0;top:38%;text-align:center;font-size:clamp(40px,14vw,110px);font-weight:900;letter-spacing:.15em;color:#fff;pointer-events:none;opacity:0;
+     text-shadow:0 0 20px #fff6c0,0 0 50px #ffcf6a}
+</style>
+</head>
+<body>
+
+<section class="scr on" id="title">
+  <h1>滅びの呪文</h1>
+  <p class="sub">写真を撮って、呪文をひとつ。<br>強い呪文ほど、跡形もなく崩れる。</p>
+  <div class="row"><button class="btn" id="bShot">📷 写真を撮る</button><button class="btn" id="bPick">🖼 写真をえらぶ</button></div>
+  <button class="btn ghost" id="bSample">お手本の城で試す</button>
+  <p class="sub" style="font-size:12px;opacity:.7">写真はこの画面の中だけで使い、保存しません</p>
+  <input type="file" id="file" accept="image/*" hidden>
+</section>
+
+<section class="scr" id="stage">
+  <canvas id="cv"></canvas>
+  <div id="topBar"><button id="bBack">← 写真を変える</button><button id="bOrig">加工前</button></div>
+  <div id="big"></div>
+  <div id="hint">呪文をとなえて、この景色を崩せ</div>
+  <div id="castBar"><input id="spell" maxlength="16" placeholder="呪文を入力（16文字まで）" autocomplete="off"><button class="btn fire" id="bCast">となえる</button></div>
+  <div id="res">
+    <div class="sp" id="rSpell"></div>
+    <div class="pct"><span id="rPct">0</span><small>% 崩壊</small></div>
+    <div class="rank" id="rRank"></div>
+    <div class="bars" id="rBars"></div>
+    <div class="why" id="rWhy"></div>
+    <div class="row"><button class="btn fire" id="bAgain">別の呪文で</button><button class="btn ghost" id="bNew">写真を変える</button></div>
+  </div>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+const R = Math.random, clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function show(id){ document.querySelectorAll('.scr').forEach(s => s.classList.toggle('on', s.id === id)); }
+
+// ================= 音 =================
+let AC = null;
+function ac(){ return AC = AC || new (window.AudioContext || window.webkitAudioContext)(); }
+function tone(f, d, type='sine', v=.1, slide=0, t0=0){
+  try { const a = ac(), o = a.createOscillator(), g = a.createGain(), t = a.currentTime + t0;
+    o.type = type; o.frequency.setValueAtTime(f, t); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, f * slide), t + d);
+    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0005, t + d); o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + d + .05); } catch(e){}
+}
+function rumble(d, v){
+  try { const a = ac(), n = a.sampleRate * d, b = a.createBuffer(1, n, a.sampleRate), c = b.getChannelData(0);
+    let last = 0; for (let i = 0; i < n; i++){ last = last * .97 + (R() * 2 - 1) * .03; c[i] = last * 6 * Math.min(1, (n - i) / (n * .5)); }
+    const s = a.createBufferSource(), g = a.createGain(), f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 220;
+    s.buffer = b; g.gain.value = v; s.connect(f); f.connect(g); g.connect(a.destination); s.start(); } catch(e){}
+}
+function crack(){ try { const a = ac(), n = a.sampleRate * .12, b = a.createBuffer(1, n, a.sampleRate), c = b.getChannelData(0);
+  for (let i = 0; i < n; i++) c[i] = (R() * 2 - 1) * Math.pow(1 - i / n, 3); const s = a.createBufferSource(), g = a.createGain(); s.buffer = b; g.gain.value = .25; s.connect(g); g.connect(a.destination); s.start(); } catch(e){} }
+
+// ================= 写真を読む =================
+let src = null;      // 元の写真（縮小済み）
+let art = null;      // アニメ風に加工したもの
+function loadUrl(u){ return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = u; }); }
+function fit(img, max){
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, k = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); return c;
+}
+$('bShot').onclick = () => { if (window.Android && Android.takePhoto) Android.takePhoto(); else $('file').click(); };
+$('bPick').onclick = () => $('file').click();
+$('file').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const u = URL.createObjectURL(f); try { start(fit(await loadUrl(u), 900)); } catch(err){ alert('写真を読みこめませんでした'); } URL.revokeObjectURL(u);
+};
+window.onNativePhoto = async u => { if (!u) return; try { start(fit(await loadUrl(u), 900)); } catch(e){} };
+$('bSample').onclick = () => start(sampleCastle(), true);
+$('bBack').onclick = $('bNew').onclick = () => { reset(); show('title'); };
+
+// お手本の城（自前で描く）
+function sampleCastle(){
+  const W = 900, H = 640, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const sky = x.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#7fb6e8'); sky.addColorStop(1, '#dcefff'); x.fillStyle = sky; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#6aa557'; x.beginPath(); x.moveTo(0, 470); x.quadraticCurveTo(300, 380, 520, 430); x.quadraticCurveTo(720, 470, 900, 420); x.lineTo(900, 640); x.lineTo(0, 640); x.fill();
+  x.fillStyle = '#4f8a45'; x.beginPath(); x.moveTo(0, 560); x.quadraticCurveTo(400, 500, 900, 560); x.lineTo(900, 640); x.lineTo(0, 640); x.fill();
+  const stone = (px, py, w, h, col) => { x.fillStyle = col; x.fillRect(px, py, w, h); x.strokeStyle = 'rgba(0,0,0,.18)'; x.lineWidth = 1;
+    for (let yy = py + 14; yy < py + h; yy += 14){ x.beginPath(); x.moveTo(px, yy); x.lineTo(px + w, yy); x.stroke(); } };
+  stone(300, 250, 300, 190, '#cbbf9f'); stone(250, 180, 80, 260, '#bfb393'); stone(570, 180, 80, 260, '#bfb393'); stone(410, 120, 80, 140, '#d6cba9');
+  const roof = (px, py, w, h, col) => { x.fillStyle = col; x.beginPath(); x.moveTo(px - 8, py); x.lineTo(px + w / 2, py - h); x.lineTo(px + w + 8, py); x.fill(); };
+  roof(250, 180, 80, 90, '#3f6fb0'); roof(570, 180, 80, 90, '#3f6fb0'); roof(410, 120, 80, 110, '#2f5a99');
+  x.fillStyle = '#5a3a1e'; x.beginPath(); x.moveTo(420, 440); x.lineTo(420, 380); x.quadraticCurveTo(450, 350, 480, 380); x.lineTo(480, 440); x.fill();
+  x.fillStyle = '#2b2b3a'; for (const [wx, wy] of [[275, 230], [595, 230], [435, 170], [340, 300], [540, 300], [275, 320], [595, 320]]) x.fillRect(wx, wy, 26, 36);
+  for (let i = 300; i < 600; i += 30) x.fillStyle = '#cbbf9f', x.fillRect(i, 236, 18, 16);
+  x.fillStyle = '#d33'; x.beginPath(); x.moveTo(450, 10); x.lineTo(450, 50); x.lineTo(480, 30); x.fill(); x.strokeStyle = '#333'; x.beginPath(); x.moveTo(450, 10); x.lineTo(450, 60); x.stroke();
+  return c;
+}
+
+// ================= 手描きアニメ風の加工 =================
+function animeize(c0, sample){
+  const W = c0.width, H = c0.height;
+  const g0 = c0.getContext('2d', {willReadFrequently:true}), d0 = g0.getImageData(0, 0, W, H).data;
+  // 1) なめらかにする（ぼかしをかけて、色を少なめに）
+  const sm = document.createElement('canvas'); sm.width = W; sm.height = H; const gs = sm.getContext('2d', {willReadFrequently:true});
+  gs.filter = 'blur(1.6px)'; gs.drawImage(c0, 0, 0); gs.filter = 'none';
+  const img = gs.getImageData(0, 0, W, H), d = img.data;
+  // 2) 空を探す：上のふちからつながっている、明るい青や白っぽいところ
+  const sky = new Uint8Array(W * H);
+  // なめらかさ：ぼかした明るさの変化が小さいところだけ空とみなす
+  const sd0 = gs.getImageData(0, 0, W, H).data, LL = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) LL[i] = sd0[i*4] * .3 + sd0[i*4+1] * .59 + sd0[i*4+2] * .11;
+  const smooth = i => { const x = i % W, y = (i / W) | 0; if (x < 2 || y < 2 || x >= W - 2 || y >= H - 2) return true;
+    return Math.abs(LL[i-2] - LL[i+2]) + Math.abs(LL[i-2*W] - LL[i+2*W]) < 22; };
+  const isSkyCol = i => { const r = d0[i*4], g = d0[i*4+1], b = d0[i*4+2], mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (r + g + b) / 3;
+    return ((b - r > 25 && b >= g - 12 && l > 155) || (l > 205 && mx - mn < 32)) && smooth(i); };
+  const st = []; for (let x = 0; x < W; x++){ const i = x; if (isSkyCol(i)){ sky[i] = 1; st.push(i); } }
+  while (st.length){ const i = st.pop(), x = i % W, y = (i / W) | 0;
+    for (const [u, v] of [[1,0],[-1,0],[0,1],[0,-1]]){ const xx = x + u, yy = y + v; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const j = yy * W + xx;
+      if (!sky[j] && yy < H * .75 && isSkyCol(j)){ const dr = Math.abs(d0[i*4] - d0[j*4]) + Math.abs(d0[i*4+1] - d0[j*4+1]) + Math.abs(d0[i*4+2] - d0[j*4+2]); if (dr < 40){ sky[j] = 1; st.push(j); } } } }
+  let skyN = 0, skyY = 0, topN = 0; for (let i = 0; i < W * H; i++) if (sky[i]){ skyN++; skyY += (i / W) | 0; }
+  for (let x = 0; x < W; x++) topN += sky[x];
+  // 空らしい：ある程度の広さがあり、上のほうにかたまっていて、上のふちの多くが空
+  const hasSky = skyN > W * H * .05 && skyY / skyN < H * .35 && topN > W * .4;
+  // 3) 色をアニメ風に：彩度を上げ、明るさを段に分け、影を青緑に、光を暖色に
+  for (let i = 0; i < W * H; i++){
+    const k = i * 4; let r = d[k], g = d[k+1], b = d[k+2];
+    const l = (r * .3 + g * .59 + b * .11);
+    // 彩度アップ
+    r = l + (r - l) * 1.35; g = l + (g - l) * 1.35; b = l + (b - l) * 1.35;
+    // 明るさを段にする（なめらかに）
+    const lv = Math.round(l / 42) * 42, kk = (lv + 10) / (l + 10); const m = .55;
+    r = r * (1 - m) + r * kk * m; g = g * (1 - m) + g * kk * m; b = b * (1 - m) + b * kk * m;
+    // 色調：暗いところは青緑寄り、明るいところは暖色寄り
+    const t = l / 255;
+    r += (t - .5) * 22; g += (t - .5) * 8 + 4; b += (.5 - t) * 20;
+    d[k] = clamp(r, 0, 255); d[k+1] = clamp(g, 0, 255); d[k+2] = clamp(b, 0, 255);
+  }
+  gs.putImageData(img, 0, 0);
+  const out = document.createElement('canvas'); out.width = W; out.height = H; const o = out.getContext('2d');
+  // 4) 空を、塗った空と入道雲に差しかえる
+  if (hasSky && !sample){
+    const sk = document.createElement('canvas'); sk.width = W; sk.height = H; paintSky(sk.getContext('2d'), W, H);
+    const sd = sk.getContext('2d').getImageData(0, 0, W, H).data, md = gs.getImageData(0, 0, W, H);
+    // 空のふちをなじませる
+    const soft = new Float32Array(W * H); for (let i = 0; i < W * H; i++) soft[i] = sky[i];
+    for (let pass = 0; pass < 2; pass++) for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++){ const i = y * W + x; soft[i] = (soft[i] * 4 + soft[i-1] + soft[i+1] + soft[i-W] + soft[i+W]) / 8; }
+    for (let i = 0; i < W * H; i++){ const a = soft[i]; if (a <= 0) continue; for (let c = 0; c < 3; c++) md.data[i*4+c] = md.data[i*4+c] * (1 - a) + sd[i*4+c] * a; }
+    gs.putImageData(md, 0, 0);
+  } else if (sample){
+    const sk = document.createElement('canvas'); sk.width = W; sk.height = H; paintSky(sk.getContext('2d'), W, H);
+    const sd = sk.getContext('2d').getImageData(0, 0, W, H).data, md = gs.getImageData(0, 0, W, H);
+    for (let i = 0; i < W * H; i++) if (sky[i]) for (let c = 0; c < 3; c++) md.data[i*4+c] = sd[i*4+c];
+    gs.putImageData(md, 0, 0);
+  }
+  o.drawImage(sm, 0, 0);
+  // 5) 線画：明るさの差が大きいところに、こげ茶の細い線
+  const L = new Float32Array(W * H); const dd = gs.getImageData(0, 0, W, H).data;
+  for (let i = 0; i < W * H; i++) L[i] = dd[i*4] * .3 + dd[i*4+1] * .59 + dd[i*4+2] * .11;
+  const lines = o.getImageData(0, 0, W, H);
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++){
+    const i = y * W + x;
+    const gx = -L[i-W-1] - 2*L[i-1] - L[i+W-1] + L[i-W+1] + 2*L[i+1] + L[i+W+1];
+    const gy = -L[i-W-1] - 2*L[i-W] - L[i-W+1] + L[i+W-1] + 2*L[i+W] + L[i+W+1];
+    const mg = Math.hypot(gx, gy);
+    if (mg > 70 && !(sky[i] && !sample)){ const a = Math.min(.75, (mg - 70) / 160); const k = i * 4;
+      lines.data[k] = lines.data[k] * (1 - a) + 50 * a; lines.data[k+1] = lines.data[k+1] * (1 - a) + 34 * a; lines.data[k+2] = lines.data[k+2] * (1 - a) + 30 * a; }
+  }
+  o.putImageData(lines, 0, 0);
+  // 6) 光と影：ふんわり光らせて、四隅を少し暗く
+  o.globalCompositeOperation = 'soft-light'; o.globalAlpha = .35; o.filter = 'blur(6px)'; o.drawImage(out, 0, 0); o.filter = 'none'; o.globalAlpha = 1;
+  o.globalCompositeOperation = 'source-over';
+  const vg = o.createRadialGradient(W/2, H/2, Math.min(W, H) * .35, W/2, H/2, Math.hypot(W, H) * .6);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(10,20,40,.35)'); o.fillStyle = vg; o.fillRect(0, 0, W, H);
+  return out;
+}
+function paintSky(x, W, H){
+  const g = x.createLinearGradient(0, 0, 0, H * .8); g.addColorStop(0, '#2f6fc4'); g.addColorStop(.55, '#6fb1ea'); g.addColorStop(1, '#cfe9fb');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  // 入道雲
+  const cloud = (cx, cy, s) => {
+    for (let i = 0; i < 14; i++){
+      const a = R() * Math.PI, rr = s * (.35 + R() * .45), px = cx + Math.cos(a) * s * (.4 + R() * .8) * (R() < .5 ? -1 : 1), py = cy - Math.sin(a) * s * .5;
+      const gg = x.createRadialGradient(px - rr * .3, py - rr * .4, rr * .1, px, py, rr);
+      gg.addColorStop(0, '#ffffff'); gg.addColorStop(.7, '#f1f4fb'); gg.addColorStop(1, 'rgba(200,214,236,.0)');
+      x.fillStyle = gg; x.beginPath(); x.arc(px, py, rr, 0, Math.PI * 2); x.fill();
+    }
+    x.fillStyle = 'rgba(170,190,220,.35)'; x.beginPath(); x.ellipse(cx, cy + s * .15, s * 1.2, s * .18, 0, 0, Math.PI * 2); x.fill();
+  };
+  cloud(W * (.2 + R() * .15), H * .32, W * .16); cloud(W * (.7 + R() * .15), H * .22, W * .2); cloud(W * .5, H * .5, W * .09);
+}
+
+// ================= 呪文の強さ =================
+const DAKU = 'ガギグゲゴザジズゼゾダヂヅデドバビブベボヴ', HANDAKU = 'パピプペポ', PLOS = 'カキクケコタチツテトパピプペポ', SMALL = 'ャュョァィゥェォヮ';
+const KANJI = {滅:30,破:26,爆:30,壊:28,崩:24,終:22,獄:24,炎:20,焔:22,雷:22,闇:22,魔:22,竜:20,龍:22,神:18,黒:14,嵐:18,斬:22,砕:24,覇:22,轟:26,灼:20,冥:22,無:16,虚:16,絶:20,禁:18,呪:20,封:12,天:12,王:12,鬼:18,怒:18,撃:22,烈:20,豪:16,帝:14,衝:18,裂:22,死:20,殺:22,消:16,散:14,滅:30,亡:18,災:18,凶:18,邪:18,堕:18,零:16,極:18,究:12,終:22,焼:16,溶:14,震:18,崩:24,墜:20};
+const KATA_WORD = {'メテオ':24,'ドラゴン':18,'デス':20,'エンド':18,'ジエンド':24,'ファイア':12,'サンダー':14,'カオス':18,'アポカリプス':22,'ラグナロク':26,'ジ・エンド':24,'ノヴァ':18,'ボム':16,'バースト':20,'ブレイク':18,'クラッシュ':20,'インフェルノ':22,'ゴッド':14,'ダーク':14,'エクスプロージョン':24,'ビッグバン':20,'ハルマゲドン':24,'ギガ':10,'テラ':10};
+const SOFT = ['ください','おねがい','お願い','かわいい','ふわふわ','すき','好き','ごめん','よろしく','ありがとう','やさしく','ちょっと'];
+const HEAL = ['なおれ','治れ','直れ','復活','再生','リペア','回復','ホイミ','ケアル','よみがえれ','蘇れ','建て直し','たてなおし'];
+const toKata = s => s.replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
+function moraOf(k){
+  let m = 0; for (const ch of k){
+    if (SMALL.includes(ch)) continue;
+    if (/[゠-ヿ]/.test(ch)) m++;
+    else if (/[一-鿿]/.test(ch)) m += 2;
+    else if (/[A-Za-z]/.test(ch)) m += .6;
+    else if (/[0-9]/.test(ch)) m += 1.5;
+  }
+  return Math.round(m * 10) / 10;
+}
+function judge(raw){
+  const s = raw.trim().replace(/\s+/g, ''), k = toKata(s).replace(/[!！]/g, ''), why = [];
+  const heal = HEAL.some(w => s.includes(w));
+  const m = moraOf(k);
+  // 響き
+  let dak = 0, hand = 0, plos = 0, sokuon = 0;
+  for (const ch of k){ if (DAKU.includes(ch)) dak++; if (HANDAKU.includes(ch)) hand++; if (PLOS.includes(ch)) plos++; if (ch === 'ッ') sokuon++; }
+  const roman = (s.match(/[BDGZPKT]/gi) || []).length;
+  let snd = 8 + dak * 16 + hand * 10 + plos * 6 + sokuon * 10 + roman * 6;
+  const first = [...k][0] || '';
+  if (DAKU.includes(first)){ snd += 22; why.push(`頭が濁音の「${first}」で、ドンと重く響く`); }
+  else if (HANDAKU.includes(first) || PLOS.includes(first)){ snd += 12; why.push(`頭の「${first}」が破裂するように強い`); }
+  const lastCh = [...k].pop() || '';
+  if ('スツットクキ'.includes(lastCh)){ snd += 14; why.push(`語尾の「${lastCh}」でスパッと切れる`); }
+  if (dak >= 2) why.push(`濁音が${dak}つ。音が重い`);
+  if (/(.)\1{2,}/.test(k)){ snd += 12; why.push('同じ音の連打で圧がすごい'); }
+  snd = clamp(snd, 0, 100);
+  // 短さ
+  let brev = m <= 0 ? 0 : m < 2 ? 55 : m <= 4 ? 100 : m <= 5 ? 88 : m <= 6 ? 74 : m <= 8 ? 58 : m <= 11 ? 40 : 22;
+  if (m >= 2 && m <= 4) why.push(`${Math.round(m)}音で一瞬で唱えられる`);
+  else if (m < 2 && m > 0) why.push('短すぎて、呪文というより掛け声');
+  else if (m > 9) why.push('長い。唱え終わる前に逃げられる');
+  // 物騒さ
+  let dang = 0; const found = [];
+  for (const ch of s) if (KANJI[ch]){ dang += KANJI[ch]; if (found.length < 3 && !found.includes(ch)) found.push(ch); }
+  for (const w in KATA_WORD) if (k.includes(toKata(w).replace('・', ''))){ dang += KATA_WORD[w]; if (found.length < 3) found.push(w); }
+  if (found.length) why.push(`「${found.join('」「')}」が物騒`);
+  // 物騒な漢字は音読みも強い（バク・メツ・ハ…）
+  snd = clamp(snd + Math.min(2, [...s].filter(c => KANJI[c]).length) * 16, 0, 100);
+  dang = clamp(dang * 1.4, 0, 100);
+  // 勢い
+  const ex = (raw.match(/[!！]/g) || []).length, cho = (k.match(/ー/g) || []).length;
+  const kataR = [...s].filter(c => /[゠-ヿ]/.test(c)).length / Math.max(1, [...s].length);
+  let mom = 30 + kataR * 35 + Math.min(ex, 2) * 15 + Math.min(cho, 2) * 8 + sokuon * 8;
+  if (ex >= 4){ mom -= 25; why.push('「！」が多すぎて必死さが出た'); }
+  else if (ex >= 1) why.push('「！」で気合いが乗った');
+  mom = clamp(mom, 0, 100);
+  // 合計
+  let total = snd * .36 + brev * .2 + dang * .24 + mom * .2;
+  // 「あの呪文」の形（濁音で始まり・3音前後・スッと終わる）は特に強い
+  if (DAKU.includes(first) && m >= 2.5 && m <= 4 && 'スツ'.includes(lastCh)){ total += 38; why.unshift('濁音で入って3音で切る。呪文として完璧な形'); }
+  const soft = SOFT.find(w => s.includes(w));
+  if (soft){ total *= .4; why.push(`「${soft}」で丁寧すぎて、威力が下がった`); }
+  if (!/[゠-ヿ一-鿿A-Za-z]/.test(s) && m > 6){ total *= .8; why.push('ひらがなだけだと少しやさしい'); }
+  total = clamp(Math.round(total), 0, 100);
+  if (snd < 30 && why.length < 2) why.push('響きがやわらかい');
+  if (dang === 0 && why.length < 2) why.push('言葉の意味が平和すぎる');
+  if (heal) return {heal:true, total:0, pct:0, snd, brev, dang, mom, why:['「回復」系の言葉なので、逆に補強された'], m};
+  // 崩壊率：強さを少しだけ大げさに
+  const pct = clamp(Math.round(Math.pow(total / 100, 1.35) * 100 + (total >= 88 ? 12 : 0)), 0, 100);
+  return {total, pct, snd, brev, dang, mom, why: why.slice(0, 4), m};
+}
+const RANKS = [[100,'地図から消えた'],[95,'跡形もない'],[85,'壊滅'],[70,'半壊'],[50,'大きく崩れた'],[30,'一部が崩れた'],[12,'ひびが入った'],[1,'かすり傷'],[0,'びくともしない']];
+const rankOf = p => RANKS.find(r => p >= r[0])[1];
+
+// ================= 崩す準備：ひび割れのピース =================
+const cv = $('cv'), ctx = cv.getContext('2d');
+let remainCv = null;
+let W = 0, H = 0, dpr = 1, view = null, pieces = [], phase = 'idle', t0 = 0, result = null, showOrig = false, fx = [];
+function resize(){
+  const r = cv.getBoundingClientRect(); dpr = Math.min(2, devicePixelRatio || 1); W = r.width; H = r.height;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  if (art){ const k = Math.max(W / art.width, H / art.height); view = {k, x:(W - art.width * k) / 2, y:(H - art.height * k) / 2}; }
+}
+addEventListener('resize', () => { if ($('stage').classList.contains('on')) resize(); });
+function start(c, sample){
+  src = c; show('stage'); resize();
+  setTimeout(() => {
+    art = animeize(c, sample); resize(); makePieces(); reset(); loop();
+  }, 30);
+  // 加工中の表示
+  phase = 'busy'; drawBusy();
+}
+function drawBusy(){ ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#0d1426'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#f5ecd7'; ctx.font = '700 18px serif'; ctx.textAlign = 'center'; ctx.fillText('景色を描いています…', W/2, H/2); }
+function makePieces(){
+  const Wd = art.width, Hd = art.height, N = 110;
+  // ばらつかせた格子から種をまく（ボロノイ分割）
+  const gx = 11, gy = Math.max(6, Math.round(N / gx)), cw = Wd / gx, ch = Hd / gy, seeds = [];
+  for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) seeds.push({x:(i + .15 + R() * .7) * cw, y:(j + .15 + R() * .7) * ch, gi:i, gj:j});
+  const lab = new Int16Array(Wd * Hd), step = 1;
+  for (let y = 0; y < Hd; y += step) for (let x = 0; x < Wd; x += step){
+    const ci = Math.floor(x / cw), cj = Math.floor(y / ch); let best = 0, bd = 1e18;
+    for (let v = -1; v <= 1; v++) for (let u = -1; u <= 1; u++){
+      const ii = ci + u, jj = cj + v; if (ii < 0 || jj < 0 || ii >= gx || jj >= gy) continue;
+      const s = seeds[jj * gx + ii], d = (s.x - x) ** 2 + (s.y - y) ** 2; if (d < bd){ bd = d; best = jj * gx + ii; } }
+    lab[y * Wd + x] = best;
+  }
+  const ad = art.getContext('2d').getImageData(0, 0, Wd, Hd).data;
+  pieces = seeds.map((s, idx) => ({idx, x0:1e9, y0:1e9, x1:-1, y1:-1, cx:s.x, cy:s.y}));
+  for (let y = 0; y < Hd; y++) for (let x = 0; x < Wd; x++){ const p = pieces[lab[y * Wd + x]]; if (x < p.x0) p.x0 = x; if (y < p.y0) p.y0 = y; if (x > p.x1) p.x1 = x; if (y > p.y1) p.y1 = y; }
+  for (const p of pieces){
+    const w = p.x1 - p.x0 + 1, h = p.y1 - p.y0 + 1, c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'), im = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+      const gi = (p.y0 + y) * Wd + (p.x0 + x); if (lab[gi] !== p.idx) continue;
+      const o = (y * w + x) * 4, a = gi * 4; im.data[o] = ad[a]; im.data[o+1] = ad[a+1]; im.data[o+2] = ad[a+2]; im.data[o+3] = 255;
+    }
+    // ふちに少し暗い線（割れ目）
+    g.putImageData(im, 0, 0); p.c = c; p.w = w; p.h = h;
+  }
+  // 割れ目の線（隣とラベルが違うところ）
+  const crk = document.createElement('canvas'); crk.width = Wd; crk.height = Hd; const cg = crk.getContext('2d'), cd = cg.createImageData(Wd, Hd);
+  for (let y = 1; y < Hd; y++) for (let x = 1; x < Wd; x++){ const i = y * Wd + x; if (lab[i] !== lab[i-1] || lab[i] !== lab[i-Wd]){ const o = i * 4; cd.data[o] = 30; cd.data[o+1] = 20; cd.data[o+2] = 15; cd.data[o+3] = 200; } }
+  cg.putImageData(cd, 0, 0); window.crackCv = crk;
+}
+function reset(){
+  phase = 'idle'; fx = []; result = null; remainCv = null; $('res').classList.remove('on'); $('castBar').style.display = ''; $('hint').style.display = ''; $('topBar').style.display = '';
+  for (const p of pieces){ p.fall = false; p.started = false; p.x = p.x0; p.y = p.y0; p.vx = 0; p.vy = 0; p.rot = 0; p.vr = 0; p.delay = 0; p.done = false; }
+}
+$('bOrig').onclick = () => { showOrig = !showOrig; $('bOrig').textContent = showOrig ? '加工後' : '加工前'; };
+$('bAgain').onclick = () => { reset(); $('spell').value = ''; $('spell').focus(); };
+
+// ================= となえる =================
+$('bCast').onclick = cast;
+$('spell').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); cast(); } });
+function cast(){
+  const sp = $('spell').value.trim(); if (!sp || phase !== 'idle' || !art) return;
+  $('spell').blur(); showOrig = false; $('bOrig').textContent = '加工前';
+  result = judge(sp); result.spell = sp;
+  $('castBar').style.display = 'none'; $('hint').style.display = 'none'; $('topBar').style.display = 'none';
+  // どのピースが崩れるか：上から順に、震源の近くほど先に
+  const ex = art.width * (.25 + R() * .5), n = Math.round(pieces.length * result.pct / 100);
+  const order = pieces.map(p => ({p, v:(1 - p.cy / art.height) * .65 + (1 - Math.abs(p.cx - ex) / art.width) * .2 + R() * .25})).sort((a, b) => b.v - a.v);
+  order.forEach((o, i) => { const p = o.p; p.fall = i < n; p.delay = i / Math.max(1, n) * 1.6 + R() * .2; p.vx = (p.cx - ex) / art.width * 120 + (R() - .5) * 80; p.vy = -R() * 60; p.vr = (R() - .5) * 3; });
+  phase = 'chant'; t0 = performance.now();
+  // 呪文を大きく表示
+  const b = $('big'); b.textContent = sp; b.style.transition = 'none'; b.style.opacity = 0; b.style.transform = 'scale(1.4)';
+  requestAnimationFrame(() => { b.style.transition = 'all .5s'; b.style.opacity = 1; b.style.transform = 'scale(1)'; });
+  tone(220, 1.1, 'sine', .12, 3); tone(330, 1.1, 'triangle', .06, 3, .05);
+}
+function finishShow(){
+  const r = result; phase = 'done';
+  $('rSpell').textContent = `「${r.spell}」`;
+  $('rRank').textContent = r.heal ? '補強された' : rankOf(r.pct);
+  $('rBars').innerHTML = [['響き', r.snd], ['短さ', r.brev], ['物騒さ', r.dang], ['勢い', r.mom]].map(([n, v]) => `<div class="bar">${n}<i><b style="width:${v}%"></b></i><span>${Math.round(v)}</span></div>`).join('');
+  $('rWhy').innerHTML = r.why.map(w => `<div>${w}</div>`).join('') || '<div>特に強いところがなかった</div>';
+  // 数字をカウントアップ
+  const t = performance.now(), step = () => { const k = Math.min(1, (performance.now() - t) / 900); $('rPct').textContent = Math.round(r.pct * k); if (k < 1) requestAnimationFrame(step); };
+  step(); $('res').classList.add('on');
+}
+
+// ================= 描く =================
+let last = 0;
+function loop(now = performance.now()){
+  if (!$('stage').classList.contains('on')) return;
+  const dt = Math.min(.05, (now - last) / 1000 || 0); last = now;
+  if (art && view) frame(dt, now);
+  requestAnimationFrame(loop);
+}
+function frame(dt, now){
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const t = (now - t0) / 1000;
+  let shake = 0;
+  // 背景（崩れたあとに見える、暗い空）
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1b1030'); g.addColorStop(1, '#3a2418'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (phase === 'chant'){ shake = Math.min(1, t / 1.2) * 3; if (t > 1.2){ phase = 'flash'; t0 = now; rumble(3.2, .9); tone(90, 2.5, 'sawtooth', .08, .5); } }
+  if (phase === 'flash'){ shake = 8; if (t > .55){ phase = 'fall'; t0 = now; $('big').style.opacity = 0; } }
+  if (phase === 'fall'){ shake = Math.max(0, 6 - t * 2) * (result.pct / 100 + .2); if (t > 3.6 || (t > 1 && !pieces.some(p => p.fall && !p.done))){ phase = 'settle'; t0 = now; setTimeout(finishShow, 400); } }
+  const sx = (R() - .5) * shake, sy = (R() - .5) * shake;
+  ctx.save(); ctx.translate(view.x + sx, view.y + sy); ctx.scale(view.k, view.k);
+  if (showOrig && phase === 'idle'){ ctx.drawImage(src, 0, 0, art.width, art.height); ctx.restore(); return; }
+  const ft = phase === 'fall' || phase === 'settle' || phase === 'done' ? (now - (phase === 'fall' ? t0 : t0 - 3600)) / 1000 : -1;
+  if (!remainCv){ remainCv = document.createElement('canvas'); remainCv.width = art.width; remainCv.height = art.height; remainCv.getContext('2d').drawImage(art, 0, 0); }
+  ctx.drawImage(remainCv, 0, 0);
+  for (const p of pieces){
+    if (p.fall && phase !== 'idle' && phase !== 'chant' && phase !== 'flash'){
+      const lt = (phase === 'fall' ? t : 99) - p.delay;
+      if (lt > 0 && !p.done){
+        if (!p.started){ p.started = true; const rg = remainCv.getContext('2d'); rg.globalCompositeOperation = 'destination-out'; rg.drawImage(p.c, p.x0 - .5, p.y0 - .5, p.w + 1, p.h + 1); rg.globalCompositeOperation = 'source-over'; if (R() < .25) crack(); for (let i = 0; i < 5; i++) fx.push({x:p.cx, y:p.cy, vx:(R() - .5) * 60, vy:-R() * 40, t:0, life:1 + R(), s:6 + R() * 10}); }
+        p.vy += 900 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+        if (p.y > art.height + 200) p.done = true;
+      }
+      if (p.done) continue;
+      if (!p.started) continue;
+      ctx.save(); ctx.translate(p.x + p.w / 2, p.y + p.h / 2); ctx.rotate(p.rot); ctx.drawImage(p.c, -p.w / 2, -p.h / 2); ctx.restore();
+    }
+  }
+  // 割れ目：唱えている途中から浮かびあがる
+  if (phase !== 'idle' && !result.heal){ ctx.globalAlpha = phase === 'chant' ? Math.min(1, t / 1.2) * .6 : .7; ctx.drawImage(window.crackCv, 0, 0); ctx.globalAlpha = 1; }
+  // 補強されたとき：金色に光る
+  if (result && result.heal && phase !== 'idle'){ ctx.fillStyle = `rgba(255,215,120,${.25 + Math.sin(now / 200) * .1})`; ctx.fillRect(0, 0, art.width, art.height); }
+  // 砂ぼこり
+  for (const f of fx){ f.t += dt; f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 10 * dt; }
+  fx = fx.filter(f => f.t < f.life);
+  for (const f of fx){ const a = (1 - f.t / f.life) * .5; ctx.fillStyle = `rgba(200,180,150,${a})`; ctx.beginPath(); ctx.arc(f.x, f.y, f.s * (1 + f.t), 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+  // 光の柱と白い閃光
+  if (phase === 'chant'){ const a = Math.min(1, t / 1.2); const gx = W / 2, bw = W * .08 * a; const lg = ctx.createLinearGradient(gx - bw, 0, gx + bw, 0); lg.addColorStop(0, 'rgba(255,240,200,0)'); lg.addColorStop(.5, `rgba(255,250,230,${.7 * a})`); lg.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = lg; ctx.fillRect(gx - bw, 0, bw * 2, H); }
+  if (phase === 'flash'){ ctx.fillStyle = `rgba(255,255,240,${1 - t / .55})`; ctx.fillRect(0, 0, W, H); }
+}
+</script>
+</body>
+</html>
