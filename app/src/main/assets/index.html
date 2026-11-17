@@ -28,10 +28,6 @@ h1{font-size:clamp(44px,13vw,92px);letter-spacing:.12em;color:#fff4d6;text-shado
 #spell::placeholder{color:#7a7058;letter-spacing:0;font-size:16px}
 #topBar{position:absolute;left:0;right:0;top:0;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
 #topBar button{background:rgba(10,14,30,.7);color:#f5ecd7;border:1.5px solid #8a7a55;border-radius:999px;padding:6px 14px;font-size:14px;font-weight:700}
-#modes{position:absolute;left:0;right:0;bottom:80px;display:flex;gap:6px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
-#modes::-webkit-scrollbar{display:none}
-#modes button{flex:none;background:rgba(10,14,30,.75);color:#e8dcc0;border:1.5px solid #8a7a55;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;font-family:inherit}
-#modes button.on{background:#ffcf6a;color:#3a1a00;border-color:#ffcf6a}
 #hint{position:absolute;left:0;right:0;bottom:124px;text-align:center;font-size:13px;color:#e8dcc0;text-shadow:0 1px 4px #000;pointer-events:none}
 /* 結果 */
 #res{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);opacity:0;pointer-events:none;transition:all .35s;width:min(92vw,440px);max-height:92vh;overflow:auto;
@@ -68,7 +64,6 @@ h1{font-size:clamp(44px,13vw,92px);letter-spacing:.12em;color:#fff4d6;text-shado
   <div id="topBar"><button id="bBack">← 写真を変える</button><button id="bOrig">加工前</button></div>
   <div id="big"></div>
   <div id="hint">呪文をとなえて、この景色を崩せ</div>
-  <div id="modes"></div>
   <div id="castBar"><input id="spell" maxlength="16" placeholder="呪文を入力（16文字まで）" autocomplete="off"><button class="btn fire" id="bCast">となえる</button></div>
   <div id="res">
     <div class="sp" id="rSpell"></div>
@@ -491,7 +486,7 @@ function makePieces(){
   cg.putImageData(cd, 0, 0); window.crackCv = crk;
 }
 function reset(){
-  phase = 'idle'; fx = []; result = null; remainCv = null; $('res').classList.remove('on'); $('castBar').style.display = ''; $('hint').style.display = ''; $('topBar').style.display = ''; $('modes').style.display = ''; cells = []; flames = [];
+  phase = 'idle'; fx = []; result = null; remainCv = null; $('res').classList.remove('on'); $('castBar').style.display = ''; $('hint').style.display = ''; $('topBar').style.display = ''; cells = []; flames = [];
   for (const p of pieces){ p.fall = false; p.started = false; p.x = p.x0; p.y = p.y0; p.vx = 0; p.vy = 0; p.rot = 0; p.vr = 0; p.delay = 0; p.done = false; }
 }
 $('bOrig').onclick = () => { showOrig = !showOrig; $('bOrig').textContent = showOrig ? '加工後' : '加工前'; };
@@ -506,9 +501,34 @@ const MODES = {
   burn:   {n:'燃えて灰に',   ic:'🔥', cs:6, spread:2.8, life:8},
   melt:   {n:'溶ける',       ic:'🫠', cs:5, spread:1.4, life:8},
 };
-let modeSel = 'random', mode = 'crack', cells = [], flames = [], bh = null;
-$('modes').innerHTML = '<button data-m="random" class="on">🎲 おまかせ</button>' + Object.entries(MODES).map(([k, m]) => `<button data-m="${k}">${m.ic} ${m.n}</button>`).join('');
-$('modes').querySelectorAll('button').forEach(b => b.onclick = () => { modeSel = b.dataset.m; $('modes').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); });
+let mode = 'crack', cells = [], flames = [], bh = null;
+// 消え方は呪文から裏で決める：①意味（言葉）→ ②音の手ざわり → ③強さ
+const MODE_WORDS = {
+  burn:   ['火','炎','焔','燃','焼','灼','熱','灰','煉','獄','爆','ファイ','フレイ','フレア','バーン','ボム','エクスプロ','イグニ','もえ','やけ','もやせ','やけろ','ほのお'],
+  melt:   ['溶','融','熔','液','泥','沼','腐','酸','溶解','メルト','ドロ','とけ','とろけ','ぬま','ドロドロ','スライム','どろ'],
+  sand:   ['砂','塵','風','嵐','散','朽','枯','灰燼','サンド','ダスト','ウィンド','ちれ','ちり','すな','かぜ','さらさら','サラサラ','風化'],
+  hole:   ['闇','無','虚','吸','冥','消','滅','空','星','宇宙','黒','奈落','ブラック','ホール','ゼロ','ヴォイド','ボイド','ダーク','きえ','けせ','のみこ','すいこ'],
+  shatter:['砕','粉','裂','破','壊','撃','雷','クラッシュ','ブレイク','ブレーク','くだけ','こなごな','こわれ','バキ','バリ','ガシャ','ドカ'],
+  crack:  ['割','崩','亀裂','罅','ひび','くずれ','われ','バルス'],
+};
+const DONE = {crack:'ひび割れて崩れた', shatter:'粉々に砕けた', sand:'砂になって飛んでいった', hole:'闇に吸い込まれた', burn:'燃えて灰になった', melt:'ドロドロに溶けた'};
+function chooseMode(raw, r){
+  const s = raw.replace(/\s+/g, ''), k = toKata(s);
+  // ① 言葉の意味で決める（最初に出てきたもの）
+  let best = null, at = 1e9;
+  for (const [m, ws] of Object.entries(MODE_WORDS)) for (const w of ws){ const i = s.indexOf(w), j = k.indexOf(toKata(w)), p = Math.min(i < 0 ? 1e9 : i, j < 0 ? 1e9 : j); if (p < at){ at = p; best = [m, w]; } }
+  if (best) return {m:best[0], why:best[1] === 'バルス' ? 'あの呪文なので、ひび割れて崩れ落ちた' : `「${best[1]}」の言葉どおり、${DONE[best[0]]}`};
+  // ② 音の手ざわりで決める
+  const ks = [...k.replace(/[!！ー]/g, '')], n = Math.max(1, ks.length), cnt = set => ks.filter(c => set.includes(c)).length / n;
+  const heavy = cnt('ガギグゲゴザジズゼゾダヂヅデドバビブベボ'), pop = cnt('パピプペポカキクケコタチツテトッ'), hiss = cnt('サシスセソハヒフヘホシャシュショ'), liq = cnt('ラリルレロヌネノニナヌ'), dark = cnt('ンムモウオヴ');
+  const ex = (raw.match(/[!！]/g) || []).length, cho = (k.match(/ー/g) || []).length;
+  const sc = {shatter: heavy * 1.1 + pop * .5 + (r.pct >= 85 ? .25 : 0), burn: pop * .9 + ex * .12 + (k.includes('ッ') ? .2 : 0), sand: hiss * 1.1 + cho * .15, melt: liq * 1.1 + (/(.)\1/.test(k) ? .2 : 0), hole: dark * 1.1 + (r.pct >= 98 ? .2 : 0)};
+  const [m, v] = Object.entries(sc).sort((a, b) => b[1] - a[1])[0];
+  // ③ 弱い呪文はひびが入るだけ
+  if (r.pct < 15 || v < .3) return {m:'crack', why:r.pct < 15 ? '弱い呪文なので、ひびが入っただけ' : '素直な響きなので、ひび割れて崩れた'};
+  const say = {shatter:'濁った重い音が多いので、粉々に', burn:'はじける音が多いので、燃えて灰に', sand:'サラサラした音が多いので、砂になって飛んだ', melt:'ぬるっとした音が多いので、溶けた', hole:'こもった暗い音が多いので、闇に吸い込まれた'};
+  return {m, why:say[m]};
+}
 
 // 物体を小さなマスに分けて、消えるマスと順番を決める
 function makeCells(m, pct){
@@ -545,8 +565,8 @@ function cast(){
   const sp = $('spell').value.trim(); if (!sp || phase !== 'idle' || !art) return;
   $('spell').blur(); showOrig = false; $('bOrig').textContent = '加工前';
   result = judge(sp); result.spell = sp;
-  mode = modeSel === 'random' ? pick(Object.keys(MODES)) : modeSel; result.mode = mode;
-  $('castBar').style.display = 'none'; $('hint').style.display = 'none'; $('topBar').style.display = 'none'; $('modes').style.display = 'none';
+  const cm = chooseMode(sp, result); mode = cm.m; result.mode = mode; if (!result.heal) result.why = [cm.why, ...result.why].slice(0, 4);
+  $('castBar').style.display = 'none'; $('hint').style.display = 'none'; $('topBar').style.display = 'none';
   flames = [];
   if (mode === 'crack'){
     const ex = art.width * (.25 + R() * .5), n = Math.round(pieces.length * result.pct / 100);
