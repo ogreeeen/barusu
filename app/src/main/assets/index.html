@@ -28,7 +28,11 @@ h1{font-size:clamp(44px,13vw,92px);letter-spacing:.12em;color:#fff4d6;text-shado
 #spell::placeholder{color:#7a7058;letter-spacing:0;font-size:16px}
 #topBar{position:absolute;left:0;right:0;top:0;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
 #topBar button{background:rgba(10,14,30,.7);color:#f5ecd7;border:1.5px solid #8a7a55;border-radius:999px;padding:6px 14px;font-size:14px;font-weight:700}
-#hint{position:absolute;left:0;right:0;bottom:86px;text-align:center;font-size:13px;color:#e8dcc0;text-shadow:0 1px 4px #000;pointer-events:none}
+#modes{position:absolute;left:0;right:0;bottom:80px;display:flex;gap:6px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
+#modes::-webkit-scrollbar{display:none}
+#modes button{flex:none;background:rgba(10,14,30,.75);color:#e8dcc0;border:1.5px solid #8a7a55;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;font-family:inherit}
+#modes button.on{background:#ffcf6a;color:#3a1a00;border-color:#ffcf6a}
+#hint{position:absolute;left:0;right:0;bottom:124px;text-align:center;font-size:13px;color:#e8dcc0;text-shadow:0 1px 4px #000;pointer-events:none}
 /* 結果 */
 #res{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);opacity:0;pointer-events:none;transition:all .35s;width:min(92vw,440px);max-height:92vh;overflow:auto;
      background:rgba(12,16,32,.93);border:2px solid #c9a95a;border-radius:20px;padding:18px 18px 16px;text-align:center;box-shadow:0 0 40px rgba(0,0,0,.6)}
@@ -64,6 +68,7 @@ h1{font-size:clamp(44px,13vw,92px);letter-spacing:.12em;color:#fff4d6;text-shado
   <div id="topBar"><button id="bBack">← 写真を変える</button><button id="bOrig">加工前</button></div>
   <div id="big"></div>
   <div id="hint">呪文をとなえて、この景色を崩せ</div>
+  <div id="modes"></div>
   <div id="castBar"><input id="spell" maxlength="16" placeholder="呪文を入力（16文字まで）" autocomplete="off"><button class="btn fire" id="bCast">となえる</button></div>
   <div id="res">
     <div class="sp" id="rSpell"></div>
@@ -99,6 +104,8 @@ function crack(){ try { const a = ac(), n = a.sampleRate * .12, b = a.createBuff
 
 // ================= 写真を読む =================
 let src = null;      // 元の写真（縮小済み）
+let lastSky = null, sampleMask = null;  // 空だと判定したところ（背景あつかい）
+let fgCv = null, bgCv = null, maskCv = null;   // 物体・背景（穴埋め済み）・物体の形
 let art = null;      // アニメ風に加工したもの
 function loadUrl(u){ return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = u; }); }
 function fit(img, max){
@@ -122,6 +129,7 @@ function sampleCastle(){
   const sky = x.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#7fb6e8'); sky.addColorStop(1, '#dcefff'); x.fillStyle = sky; x.fillRect(0, 0, W, H);
   x.fillStyle = '#6aa557'; x.beginPath(); x.moveTo(0, 470); x.quadraticCurveTo(300, 380, 520, 430); x.quadraticCurveTo(720, 470, 900, 420); x.lineTo(900, 640); x.lineTo(0, 640); x.fill();
   x.fillStyle = '#4f8a45'; x.beginPath(); x.moveTo(0, 560); x.quadraticCurveTo(400, 500, 900, 560); x.lineTo(900, 640); x.lineTo(0, 640); x.fill();
+  const before = x.getImageData(0, 0, W, H).data;
   const stone = (px, py, w, h, col) => { x.fillStyle = col; x.fillRect(px, py, w, h); x.strokeStyle = 'rgba(0,0,0,.18)'; x.lineWidth = 1;
     for (let yy = py + 14; yy < py + h; yy += 14){ x.beginPath(); x.moveTo(px, yy); x.lineTo(px + w, yy); x.stroke(); } };
   stone(300, 250, 300, 190, '#cbbf9f'); stone(250, 180, 80, 260, '#bfb393'); stone(570, 180, 80, 260, '#bfb393'); stone(410, 120, 80, 140, '#d6cba9');
@@ -131,6 +139,9 @@ function sampleCastle(){
   x.fillStyle = '#2b2b3a'; for (const [wx, wy] of [[275, 230], [595, 230], [435, 170], [340, 300], [540, 300], [275, 320], [595, 320]]) x.fillRect(wx, wy, 26, 36);
   for (let i = 300; i < 600; i += 30) x.fillStyle = '#cbbf9f', x.fillRect(i, 236, 18, 16);
   x.fillStyle = '#d33'; x.beginPath(); x.moveTo(450, 10); x.lineTo(450, 50); x.lineTo(480, 30); x.fill(); x.strokeStyle = '#333'; x.beginPath(); x.moveTo(450, 10); x.lineTo(450, 60); x.stroke();
+  // 城の形（描く前と変わったところ）をそのまま物体の形にする
+  const after = x.getImageData(0, 0, W, H).data; sampleMask = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) sampleMask[i] = Math.abs(after[i*4] - before[i*4]) + Math.abs(after[i*4+1] - before[i*4+1]) + Math.abs(after[i*4+2] - before[i*4+2]) > 12 ? 1 : 0;
   return c;
 }
 
@@ -159,6 +170,7 @@ function animeize(c0, sample){
   for (let x = 0; x < W; x++) topN += sky[x];
   // 空らしい：ある程度の広さがあり、上のほうにかたまっていて、上のふちの多くが空
   const hasSky = skyN > W * H * .05 && skyY / skyN < H * .35 && topN > W * .4;
+  lastSky = (hasSky || sample) ? sky : null;
   // 3) 色をアニメ風に：彩度を上げ、明るさを段に分け、影を青緑に、光を暖色に
   for (let i = 0; i < W * H; i++){
     const k = i * 4; let r = d[k], g = d[k+1], b = d[k+2];
@@ -299,6 +311,132 @@ function judge(raw){
 const RANKS = [[100,'地図から消えた'],[95,'跡形もない'],[85,'壊滅'],[70,'半壊'],[50,'大きく崩れた'],[30,'一部が崩れた'],[12,'ひびが入った'],[1,'かすり傷'],[0,'びくともしない']];
 const rankOf = p => RANKS.find(r => p >= r[0])[1];
 
+
+// ================= 物体と背景を分ける =================
+// まわりの色（ふち）と違って、まん中寄りにあるものを「物体」とみなす
+function separate(){
+  const W = art.width, H = art.height, sw = 160, sh = Math.max(40, Math.round(H * sw / W));
+  const t = document.createElement('canvas'); t.width = sw; t.height = sh; const tg = t.getContext('2d', {willReadFrequently:true});
+  tg.drawImage(art, 0, 0, sw, sh); const d = tg.getImageData(0, 0, sw, sh).data, N = sw * sh;
+  const skyS = new Uint8Array(N);
+  if (lastSky) for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) skyS[y * sw + x] = lastSky[Math.min(H - 1, Math.floor((y + .5) * H / sh)) * W + Math.min(W - 1, Math.floor((x + .5) * W / sw))];
+  // ふちの色を6つにまとめる
+  const b = Math.max(3, Math.round(sw * .06)), border = [];
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) if (x < b || y < b || x >= sw - b || y >= sh - b) border.push(y * sw + x);
+  let cs = []; for (let k = 0; k < 6; k++){ const i = border[Math.floor(R() * border.length)]; cs.push([d[i*4], d[i*4+1], d[i*4+2]]); }
+  for (let it = 0; it < 8; it++){
+    const acc = cs.map(() => [0, 0, 0, 0]);
+    for (const i of border){ let bi = 0, bd = 1e9; cs.forEach((c, k) => { const q = (d[i*4] - c[0]) ** 2 + (d[i*4+1] - c[1]) ** 2 + (d[i*4+2] - c[2]) ** 2; if (q < bd){ bd = q; bi = k; } }); const a = acc[bi]; a[0] += d[i*4]; a[1] += d[i*4+1]; a[2] += d[i*4+2]; a[3]++; }
+    cs = cs.map((c, k) => acc[k][3] ? [acc[k][0] / acc[k][3], acc[k][1] / acc[k][3], acc[k][2] / acc[k][3]] : c);
+  }
+  let sc = new Float32Array(N);
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++){
+    const i = y * sw + x; let bd = 1e9;
+    for (const c of cs){ const q = Math.sqrt((d[i*4] - c[0]) ** 2 + (d[i*4+1] - c[1]) ** 2 + (d[i*4+2] - c[2]) ** 2); if (q < bd) bd = q; }
+    const dx = (x / sw - .5) / .62, dy = (y / sh - .52) / .62, cp = .35 + .65 * clamp(1 - (dx * dx + dy * dy), 0, 1);
+    sc[i] = skyS[i] ? 0 : bd * cp;
+  }
+  sc = blurA(sc, sw, sh, 2);
+  // しきい値（大津の方法）
+  let mx = 0; for (let i = 0; i < N; i++) if (sc[i] > mx) mx = sc[i];
+  const hist = new Array(64).fill(0); for (let i = 0; i < N; i++) hist[Math.min(63, Math.floor(sc[i] / (mx || 1) * 63))]++;
+  let sum = 0; hist.forEach((h, k) => sum += k * h); let sB = 0, wB = 0, best = 0, th = 20;
+  for (let k = 0; k < 64; k++){ wB += hist[k]; if (!wB) continue; const wF = N - wB; if (!wF) break; sB += k * hist[k]; const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) ** 2; if (v > best){ best = v; th = k; } }
+  const thv = Math.max(th / 63 * mx, mx * .18);
+  let m = new Uint8Array(N); for (let i = 0; i < N; i++) m[i] = sc[i] > thv ? 1 : 0;
+  m = morph(morph(m, sw, sh, 1), sw, sh, 0); m = morph(morph(m, sw, sh, 0), sw, sh, 1);
+  // 小さなかけらを捨てて、穴を埋める
+  const lab = new Int32Array(N).fill(-1), comps = [];
+  for (let i = 0; i < N; i++){ if (!m[i] || lab[i] >= 0) continue; const st = [i], id = comps.length; lab[i] = id; let n = 0, cx = 0, cy = 0;
+    while (st.length){ const j = st.pop(); n++; cx += j % sw; cy += (j / sw) | 0; for (const o of [1, -1, sw, -sw]){ const k = j + o; if (k < 0 || k >= N || (o === 1 && k % sw === 0) || (o === -1 && j % sw === 0)) continue; if (m[k] && lab[k] < 0){ lab[k] = id; st.push(k); } } }
+    comps.push({n, cx:cx / n / sw, cy:cy / n / sh}); }
+  const keep = comps.map(c => c.n > N * .015 && Math.abs(c.cx - .5) < .45);
+  for (let i = 0; i < N; i++) m[i] = m[i] && keep[lab[i]] ? 1 : 0;
+  const out = new Uint8Array(N), st = [];
+  for (let x = 0; x < sw; x++){ st.push(x, (sh - 1) * sw + x); } for (let y = 0; y < sh; y++){ st.push(y * sw, y * sw + sw - 1); }
+  while (st.length){ const j = st.pop(); if (out[j] || m[j]) continue; out[j] = 1; const x = j % sw, y = (j / sw) | 0; if (x > 0) st.push(j - 1); if (x < sw - 1) st.push(j + 1); if (y > 0) st.push(j - sw); if (y < sh - 1) st.push(j + sw); }
+  for (let i = 0; i < N; i++) m[i] = out[i] ? 0 : 1;
+  // お手本の城は、形がわかっているのでそれを使う
+  if (sampleMask){ for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++){ let v = 0;
+      for (let yy = Math.floor(y * H / sh); yy < Math.floor((y + 1) * H / sh); yy++) for (let xx = Math.floor(x * W / sw); xx < Math.floor((x + 1) * W / sw); xx++) v += sampleMask[yy * W + xx];
+      m[y * sw + x] = v > (W / sw) * (H / sh) * .35 ? 1 : 0; } }
+  let fg = 0; for (let i = 0; i < N; i++) fg += m[i];
+  // うまく分けられなかったら：空以外を物体に。空もなければ、まん中の楕円
+  if (fg < N * .04 || fg > N * .9){
+    for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++){ const i = y * sw + x, dx = (x / sw - .5) / .42, dy = (y / sh - .55) / .45;
+      m[i] = lastSky && fg > N * .9 ? (skyS[i] ? 0 : 1) : (dx * dx + dy * dy < 1 ? 1 : 0); }
+  }
+  // 物体の形（ふちをなめらかに）を元の大きさに
+  const ms = document.createElement('canvas'); ms.width = sw; ms.height = sh; const mg = ms.getContext('2d'), md = mg.createImageData(sw, sh);
+  for (let i = 0; i < N; i++){ md.data[i*4] = md.data[i*4+1] = md.data[i*4+2] = 255; md.data[i*4+3] = m[i] ? 255 : 0; }
+  mg.putImageData(md, 0, 0);
+  maskCv = document.createElement('canvas'); maskCv.width = W; maskCv.height = H; const mk = maskCv.getContext('2d');
+  mk.filter = `blur(${Math.max(1, W / sw * .6)}px)`; mk.imageSmoothingEnabled = true; mk.drawImage(ms, 0, 0, W, H); mk.filter = 'none';
+  // 物体だけ
+  fgCv = document.createElement('canvas'); fgCv.width = W; fgCv.height = H; const fx = fgCv.getContext('2d');
+  fx.drawImage(art, 0, 0); fx.globalCompositeOperation = 'destination-in'; fx.drawImage(maskCv, 0, 0); fx.globalCompositeOperation = 'source-over';
+  // 背景：物体より少し大きめに抜いて（ふちの残りを消すため）、穴をまわりの色で埋める
+  const md2 = morph(morph(m, sw, sh, 1), sw, sh, 1);
+  const ms2 = document.createElement('canvas'); ms2.width = sw; ms2.height = sh; const mg2 = ms2.getContext('2d'), mdd = mg2.createImageData(sw, sh);
+  for (let i = 0; i < N; i++){ mdd.data[i*4+3] = md2[i] ? 255 : 0; } mg2.putImageData(mdd, 0, 0);
+  const hole = document.createElement('canvas'); hole.width = W; hole.height = H; const hx = hole.getContext('2d');
+  hx.drawImage(art, 0, 0); hx.globalCompositeOperation = 'destination-out'; hx.filter = `blur(${Math.max(1, W / sw * .5)}px)`; hx.drawImage(ms2, 0, 0, W, H); hx.filter = 'none'; hx.globalCompositeOperation = 'source-over';
+  bgCv = inpaint(hole, sw * 2);
+}
+function blurA(a, w, h, r){
+  const t = new Float32Array(w * h), o = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){ let s = 0, n = 0; for (let k = -r; k <= r; k++){ const xx = x + k; if (xx >= 0 && xx < w){ s += a[y * w + xx]; n++; } } t[y * w + x] = s / n; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){ let s = 0, n = 0; for (let k = -r; k <= r; k++){ const yy = y + k; if (yy >= 0 && yy < h){ s += t[yy * w + x]; n++; } } o[y * w + x] = s / n; }
+  return o;
+}
+// grow=1 ならふくらませる、0 ならけずる
+function morph(m, w, h, grow){
+  const o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    let v = grow ? 0 : 1;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++){ const xx = x + dx, yy = y + dy; const q = xx < 0 || yy < 0 || xx >= w || yy >= h ? 0 : m[yy * w + xx]; if (grow && q) v = 1; if (!grow && !q) v = 0; }
+    o[y * w + x] = v;
+  }
+  return o;
+}
+// 穴埋め：縮めて平均した色を、穴のところへ広げていく（プッシュ・プル）。最後に少しざらつきを足す
+function inpaint(hole, work){
+  const W = hole.width, H = hole.height, k = Math.min(1, work / W), w0 = Math.max(8, Math.round(W * k)), h0 = Math.max(8, Math.round(H * k));
+  const t = document.createElement('canvas'); t.width = w0; t.height = h0; const tg = t.getContext('2d', {willReadFrequently:true}); tg.drawImage(hole, 0, 0, w0, h0);
+  const id = tg.getImageData(0, 0, w0, h0), d = id.data;
+  let lv = [{w:w0, h:h0, c:new Float32Array(w0 * h0 * 3), a:new Float32Array(w0 * h0)}];
+  for (let i = 0; i < w0 * h0; i++){ const a = d[i*4+3] / 255; lv[0].a[i] = a; for (let c = 0; c < 3; c++) lv[0].c[i*3+c] = d[i*4+c] * a; }
+  while (lv[lv.length - 1].w > 2 && lv[lv.length - 1].h > 2){
+    const p = lv[lv.length - 1], w = Math.ceil(p.w / 2), h = Math.ceil(p.h / 2), q = {w, h, c:new Float32Array(w * h * 3), a:new Float32Array(w * h)};
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+      let a = 0; const c = [0, 0, 0];
+      for (let v = 0; v < 2; v++) for (let u = 0; u < 2; u++){ const xx = Math.min(p.w - 1, x * 2 + u), yy = Math.min(p.h - 1, y * 2 + v), j = yy * p.w + xx; a += p.a[j]; c[0] += p.c[j*3]; c[1] += p.c[j*3+1]; c[2] += p.c[j*3+2]; }
+      const i = y * w + x, s = a > 0 ? 1 / a : 0; q.a[i] = Math.min(1, a); for (let cc = 0; cc < 3; cc++) q.c[i*3+cc] = c[cc] * s * Math.min(1, a);
+    }
+    lv.push(q);
+  }
+  // 上から順に、穴のところを下の段の色で埋める
+  for (let L = lv.length - 2; L >= 0; L--){
+    const p = lv[L], q = lv[L + 1];
+    for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++){
+      const i = y * p.w + x, a = p.a[i]; if (a >= .999) continue;
+      // 下の段を、なめらかに（4点の重み付き平均で）拾う
+      const fx = Math.max(0, Math.min(q.w - 1.001, (x + .5) / 2 - .5)), fy = Math.max(0, Math.min(q.h - 1.001, (y + .5) / 2 - .5));
+      const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(q.w - 1, x0 + 1), y1 = Math.min(q.h - 1, y0 + 1), ax = fx - x0, ay = fy - y0;
+      const ws = [[y0 * q.w + x0, (1 - ax) * (1 - ay)], [y0 * q.w + x1, ax * (1 - ay)], [y1 * q.w + x0, (1 - ax) * ay], [y1 * q.w + x1, ax * ay]];
+      for (let c = 0; c < 3; c++){ let v = 0; for (const [j, w] of ws) v += q.c[j*3+c] / (q.a[j] || 1e-6) * w; p.c[i*3+c] = p.c[i*3+c] + v * (1 - a); }
+      p.a[i] = 1;
+    }
+  }
+  const base = lv[0];
+  for (let i = 0; i < w0 * h0; i++){ const n = (R() - .5) * 10; for (let c = 0; c < 3; c++) d[i*4+c] = clamp(base.c[i*3+c] + n, 0, 255); d[i*4+3] = 255; }
+  tg.putImageData(id, 0, 0);
+  const out = document.createElement('canvas'); out.width = W; out.height = H; const o = out.getContext('2d');
+  o.filter = 'blur(4px)'; o.drawImage(t, 0, 0, W, H); o.filter = 'none';
+  o.drawImage(hole, 0, 0);   // もとの背景はそのまま
+  return out;
+}
+
 // ================= 崩す準備：ひび割れのピース =================
 const cv = $('cv'), ctx = cv.getContext('2d');
 let remainCv = null;
@@ -312,7 +450,8 @@ addEventListener('resize', () => { if ($('stage').classList.contains('on')) resi
 function start(c, sample){
   src = c; show('stage'); resize();
   setTimeout(() => {
-    art = animeize(c, sample); resize(); makePieces(); reset(); loop();
+    if (!sample) sampleMask = null;
+    art = animeize(c, sample); separate(); resize(); makePieces(); reset(); loop();
   }, 30);
   // 加工中の表示
   phase = 'busy'; drawBusy();
@@ -331,7 +470,7 @@ function makePieces(){
       const s = seeds[jj * gx + ii], d = (s.x - x) ** 2 + (s.y - y) ** 2; if (d < bd){ bd = d; best = jj * gx + ii; } }
     lab[y * Wd + x] = best;
   }
-  const ad = art.getContext('2d').getImageData(0, 0, Wd, Hd).data;
+  const ad = fgCv.getContext('2d').getImageData(0, 0, Wd, Hd).data;
   pieces = seeds.map((s, idx) => ({idx, x0:1e9, y0:1e9, x1:-1, y1:-1, cx:s.x, cy:s.y}));
   for (let y = 0; y < Hd; y++) for (let x = 0; x < Wd; x++){ const p = pieces[lab[y * Wd + x]]; if (x < p.x0) p.x0 = x; if (y < p.y0) p.y0 = y; if (x > p.x1) p.x1 = x; if (y > p.y1) p.y1 = y; }
   for (const p of pieces){
@@ -339,22 +478,65 @@ function makePieces(){
     const g = c.getContext('2d'), im = g.createImageData(w, h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
       const gi = (p.y0 + y) * Wd + (p.x0 + x); if (lab[gi] !== p.idx) continue;
-      const o = (y * w + x) * 4, a = gi * 4; im.data[o] = ad[a]; im.data[o+1] = ad[a+1]; im.data[o+2] = ad[a+2]; im.data[o+3] = 255;
+      const o = (y * w + x) * 4, a = gi * 4; im.data[o] = ad[a]; im.data[o+1] = ad[a+1]; im.data[o+2] = ad[a+2]; im.data[o+3] = ad[a+3]; if (ad[a+3] > 20) p.n = (p.n || 0) + 1;
     }
     // ふちに少し暗い線（割れ目）
     g.putImageData(im, 0, 0); p.c = c; p.w = w; p.h = h;
   }
-  // 割れ目の線（隣とラベルが違うところ）
+  pieces = pieces.filter(p => p.n > 0);
+  for (const p of pieces){ p.cx = (p.x0 + p.x1) / 2; p.cy = (p.y0 + p.y1) / 2; }
+  // 割れ目の線（隣とラベルが違うところ、物体の上だけ）
   const crk = document.createElement('canvas'); crk.width = Wd; crk.height = Hd; const cg = crk.getContext('2d'), cd = cg.createImageData(Wd, Hd);
-  for (let y = 1; y < Hd; y++) for (let x = 1; x < Wd; x++){ const i = y * Wd + x; if (lab[i] !== lab[i-1] || lab[i] !== lab[i-Wd]){ const o = i * 4; cd.data[o] = 30; cd.data[o+1] = 20; cd.data[o+2] = 15; cd.data[o+3] = 200; } }
+  for (let y = 1; y < Hd; y++) for (let x = 1; x < Wd; x++){ const i = y * Wd + x; if ((lab[i] !== lab[i-1] || lab[i] !== lab[i-Wd]) && ad[i*4+3] > 128){ const o = i * 4; cd.data[o] = 30; cd.data[o+1] = 20; cd.data[o+2] = 15; cd.data[o+3] = 200; } }
   cg.putImageData(cd, 0, 0); window.crackCv = crk;
 }
 function reset(){
-  phase = 'idle'; fx = []; result = null; remainCv = null; $('res').classList.remove('on'); $('castBar').style.display = ''; $('hint').style.display = ''; $('topBar').style.display = '';
+  phase = 'idle'; fx = []; result = null; remainCv = null; $('res').classList.remove('on'); $('castBar').style.display = ''; $('hint').style.display = ''; $('topBar').style.display = ''; $('modes').style.display = ''; cells = []; flames = [];
   for (const p of pieces){ p.fall = false; p.started = false; p.x = p.x0; p.y = p.y0; p.vx = 0; p.vy = 0; p.rot = 0; p.vr = 0; p.delay = 0; p.done = false; }
 }
 $('bOrig').onclick = () => { showOrig = !showOrig; $('bOrig').textContent = showOrig ? '加工後' : '加工前'; };
 $('bAgain').onclick = () => { reset(); $('spell').value = ''; $('spell').focus(); };
+
+// ================= 消え方 =================
+const MODES = {
+  crack:  {n:'ひび割れ',     ic:'🪨'},
+  shatter:{n:'粉々',         ic:'💥', cs:7, spread:1.6, life:6},
+  sand:   {n:'砂になる',     ic:'🏜️', cs:5, spread:2.4, life:7},
+  hole:   {n:'ブラックホール', ic:'🕳️', cs:5, spread:2.2, life:7},
+  burn:   {n:'燃えて灰に',   ic:'🔥', cs:6, spread:2.8, life:8},
+  melt:   {n:'溶ける',       ic:'🫠', cs:5, spread:1.4, life:8},
+};
+let modeSel = 'random', mode = 'crack', cells = [], flames = [], bh = null;
+$('modes').innerHTML = '<button data-m="random" class="on">🎲 おまかせ</button>' + Object.entries(MODES).map(([k, m]) => `<button data-m="${k}">${m.ic} ${m.n}</button>`).join('');
+$('modes').querySelectorAll('button').forEach(b => b.onclick = () => { modeSel = b.dataset.m; $('modes').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); });
+
+// 物体を小さなマスに分けて、消えるマスと順番を決める
+function makeCells(m, pct){
+  const cs = MODES[m].cs, Wd = art.width, Hd = art.height, d = fgCv.getContext('2d').getImageData(0, 0, Wd, Hd).data, list = [];
+  let bx0 = 1e9, by0 = 1e9, bx1 = 0, by1 = 0;
+  for (let y = 0; y < Hd; y += cs) for (let x = 0; x < Wd; x += cs){
+    let r = 0, g = 0, b = 0, a = 0, n = 0;
+    for (let v = 0; v < cs && y + v < Hd; v += 2) for (let u = 0; u < cs && x + u < Wd; u += 2){ const i = ((y + v) * Wd + x + u) * 4; const al = d[i+3] / 255; r += d[i] * al; g += d[i+1] * al; b += d[i+2] * al; a += al; n++; }
+    if (a / n < .35) continue;
+    list.push({x, y, r:r / a, g:g / a, b:b / a}); bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x + cs); by1 = Math.max(by1, y + cs);
+  }
+  const ex = art.width * (.25 + R() * .5), nz = (x, y) => Math.sin(x * .02 + y * .013) * .5 + Math.sin(x * .007 - y * .021 + 3) * .5;
+  for (const c of list){
+    let v;
+    if (m === 'sand') v = (1 - c.x / Wd) * .8 + nz(c.x, c.y) * .12 + R() * .08;        // 左から順に
+    else if (m === 'burn') v = (c.y / Hd) * .7 + nz(c.x, c.y) * .2 + R() * .1;        // 下から燃える
+    else if (m === 'melt') v = (1 - c.y / Hd) * .5 + nz(c.x, 0) * .4 + R() * .1;
+    else if (m === 'hole') v = (1 - Math.hypot(c.x - (bx0 + bx1) / 2, c.y - by0) / Wd) * .7 + R() * .3;
+    else v = (1 - c.y / Hd) * .65 + (1 - Math.abs(c.x - ex) / Wd) * .2 + R() * .15;
+    c.v = v;
+  }
+  list.sort((a, b) => b.v - a.v);
+  const n = Math.round(list.length * pct / 100), sp = MODES[m].spread;
+  const out = list.slice(0, n).map((c, i) => ({...c, s: i / Math.max(1, n) * sp + R() * .15, col:`rgb(${c.r|0},${c.g|0},${c.b|0})`, cs, started:false, dead:false}));
+  bh = {x:(bx0 + bx1) / 2, y:Math.max(Hd * .12, by0 + (by1 - by0) * .35), r:0};
+  out.groundY = Math.min(Hd - 4, by1 + 6);
+  return out;
+}
 
 // ================= となえる =================
 $('bCast').onclick = cast;
@@ -363,24 +545,42 @@ function cast(){
   const sp = $('spell').value.trim(); if (!sp || phase !== 'idle' || !art) return;
   $('spell').blur(); showOrig = false; $('bOrig').textContent = '加工前';
   result = judge(sp); result.spell = sp;
-  $('castBar').style.display = 'none'; $('hint').style.display = 'none'; $('topBar').style.display = 'none';
-  // どのピースが崩れるか：上から順に、震源の近くほど先に
-  const ex = art.width * (.25 + R() * .5), n = Math.round(pieces.length * result.pct / 100);
-  const order = pieces.map(p => ({p, v:(1 - p.cy / art.height) * .65 + (1 - Math.abs(p.cx - ex) / art.width) * .2 + R() * .25})).sort((a, b) => b.v - a.v);
-  order.forEach((o, i) => { const p = o.p; p.fall = i < n; p.delay = i / Math.max(1, n) * 1.6 + R() * .2; p.vx = (p.cx - ex) / art.width * 120 + (R() - .5) * 80; p.vy = -R() * 60; p.vr = (R() - .5) * 3; });
+  mode = modeSel === 'random' ? pick(Object.keys(MODES)) : modeSel; result.mode = mode;
+  $('castBar').style.display = 'none'; $('hint').style.display = 'none'; $('topBar').style.display = 'none'; $('modes').style.display = 'none';
+  flames = [];
+  if (mode === 'crack'){
+    const ex = art.width * (.25 + R() * .5), n = Math.round(pieces.length * result.pct / 100);
+    const order = pieces.map(p => ({p, v:(1 - p.cy / art.height) * .65 + (1 - Math.abs(p.cx - ex) / art.width) * .2 + R() * .25})).sort((a, b) => b.v - a.v);
+    order.forEach((o, i) => { const p = o.p; p.fall = i < n; p.delay = i / Math.max(1, n) * 1.6 + R() * .2; p.vx = (p.cx - ex) / art.width * 120 + (R() - .5) * 80; p.vy = -R() * 60; p.vr = (R() - .5) * 3; });
+    cells = [];
+  } else cells = result.heal ? [] : makeCells(mode, result.pct);
   phase = 'chant'; t0 = performance.now();
-  // 呪文を大きく表示
   const b = $('big'); b.textContent = sp; b.style.transition = 'none'; b.style.opacity = 0; b.style.transform = 'scale(1.4)';
   requestAnimationFrame(() => { b.style.transition = 'all .5s'; b.style.opacity = 1; b.style.transform = 'scale(1)'; });
   tone(220, 1.1, 'sine', .12, 3); tone(330, 1.1, 'triangle', .06, 3, .05);
 }
+const pick = a => a[Math.floor(R() * a.length)];
+function modeSound(){
+  if (result.heal){ [523, 659, 784, 1046].forEach((f, i) => tone(f, .4, 'triangle', .1, 1, i * .1)); return; }
+  const k = result.pct / 100 + .2;
+  if (mode === 'crack' || mode === 'shatter'){ rumble(3.2, .9 * k); tone(90, 2.5, 'sawtooth', .08, .5); if (mode === 'shatter') for (let i = 0; i < 8; i++) setTimeout(crack, i * 120); }
+  else if (mode === 'sand'){ noiseSweep(3, 'highpass', 1800, .18 * k); }
+  else if (mode === 'hole'){ tone(160, 3.5, 'sawtooth', .1, .15); tone(40, 4, 'sine', .25, 1); rumble(3.5, .6 * k); }
+  else if (mode === 'burn'){ noiseSweep(4, 'lowpass', 900, .3 * k); for (let i = 0; i < 14; i++) setTimeout(() => crack(), 200 + i * 230); }
+  else if (mode === 'melt'){ for (let i = 0; i < 10; i++) tone(120 + R() * 120, .35, 'sine', .12, .5, i * .3); rumble(3, .4 * k); }
+}
+function noiseSweep(d, type, f, v){
+  try { const a = ac(), n = a.sampleRate * d, b = a.createBuffer(1, n, a.sampleRate), c = b.getChannelData(0);
+    for (let i = 0; i < n; i++) c[i] = (R() * 2 - 1) * Math.sin(Math.PI * i / n);
+    const s = a.createBufferSource(), g = a.createGain(), fl = a.createBiquadFilter(); fl.type = type; fl.frequency.value = f;
+    s.buffer = b; g.gain.value = v; s.connect(fl); fl.connect(g); g.connect(a.destination); s.start(); } catch(e){}
+}
 function finishShow(){
   const r = result; phase = 'done';
   $('rSpell').textContent = `「${r.spell}」`;
-  $('rRank').textContent = r.heal ? '補強された' : rankOf(r.pct);
+  $('rRank').textContent = (r.heal ? '補強された' : rankOf(r.pct)) + `　${MODES[r.mode].ic} ${MODES[r.mode].n}`;
   $('rBars').innerHTML = [['響き', r.snd], ['短さ', r.brev], ['物騒さ', r.dang], ['勢い', r.mom]].map(([n, v]) => `<div class="bar">${n}<i><b style="width:${v}%"></b></i><span>${Math.round(v)}</span></div>`).join('');
   $('rWhy').innerHTML = r.why.map(w => `<div>${w}</div>`).join('') || '<div>特に強いところがなかった</div>';
-  // 数字をカウントアップ
   const t = performance.now(), step = () => { const k = Math.min(1, (performance.now() - t) / 900); $('rPct').textContent = Math.round(r.pct * k); if (k < 1) requestAnimationFrame(step); };
   step(); $('res').classList.add('on');
 }
@@ -393,46 +593,121 @@ function loop(now = performance.now()){
   if (art && view) frame(dt, now);
   requestAnimationFrame(loop);
 }
+const lerp = (a, b, k) => a + (b - a) * k;
 function frame(dt, now){
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const t = (now - t0) / 1000;
   let shake = 0;
-  // 背景（崩れたあとに見える、暗い空）
-  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1b1030'); g.addColorStop(1, '#3a2418'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  if (phase === 'chant'){ shake = Math.min(1, t / 1.2) * 3; if (t > 1.2){ phase = 'flash'; t0 = now; rumble(3.2, .9); tone(90, 2.5, 'sawtooth', .08, .5); } }
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  if (phase === 'chant'){ shake = Math.min(1, t / 1.2) * 3; if (t > 1.2){ phase = 'flash'; t0 = now; modeSound();
+    if (mode === 'crack' && !result.heal && remainCv){ const g = remainCv.getContext('2d'); g.globalCompositeOperation = 'source-atop'; g.globalAlpha = .7; g.drawImage(window.crackCv, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; } } }
   if (phase === 'flash'){ shake = 8; if (t > .55){ phase = 'fall'; t0 = now; $('big').style.opacity = 0; } }
-  if (phase === 'fall'){ shake = Math.max(0, 6 - t * 2) * (result.pct / 100 + .2); if (t > 3.6 || (t > 1 && !pieces.some(p => p.fall && !p.done))){ phase = 'settle'; t0 = now; setTimeout(finishShow, 400); } }
+  const ft = phase === 'fall' ? t : 99;
+  if (phase === 'fall'){
+    shake = mode === 'hole' || mode === 'melt' ? 1.5 : Math.max(0, 6 - t * 2) * (result.pct / 100 + .2);
+    const lim = mode === 'crack' ? 3.6 : MODES[mode].life;
+    const busy = mode === 'crack' ? pieces.some(p => p.fall && !p.done) : cells.some(c => !c.dead) || flames.length;
+    if (t > lim || (t > 1 && !busy)){ phase = 'settle'; t0 = now; setTimeout(finishShow, 400); }
+  }
   const sx = (R() - .5) * shake, sy = (R() - .5) * shake;
   ctx.save(); ctx.translate(view.x + sx, view.y + sy); ctx.scale(view.k, view.k);
   if (showOrig && phase === 'idle'){ ctx.drawImage(src, 0, 0, art.width, art.height); ctx.restore(); return; }
-  const ft = phase === 'fall' || phase === 'settle' || phase === 'done' ? (now - (phase === 'fall' ? t0 : t0 - 3600)) / 1000 : -1;
-  if (!remainCv){ remainCv = document.createElement('canvas'); remainCv.width = art.width; remainCv.height = art.height; remainCv.getContext('2d').drawImage(art, 0, 0); }
-  ctx.drawImage(remainCv, 0, 0);
-  for (const p of pieces){
-    if (p.fall && phase !== 'idle' && phase !== 'chant' && phase !== 'flash'){
-      const lt = (phase === 'fall' ? t : 99) - p.delay;
-      if (lt > 0 && !p.done){
-        if (!p.started){ p.started = true; const rg = remainCv.getContext('2d'); rg.globalCompositeOperation = 'destination-out'; rg.drawImage(p.c, p.x0 - .5, p.y0 - .5, p.w + 1, p.h + 1); rg.globalCompositeOperation = 'source-over'; if (R() < .25) crack(); for (let i = 0; i < 5; i++) fx.push({x:p.cx, y:p.cy, vx:(R() - .5) * 60, vy:-R() * 40, t:0, life:1 + R(), s:6 + R() * 10}); }
-        p.vy += 900 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
-        if (p.y > art.height + 200) p.done = true;
-      }
-      if (p.done) continue;
-      if (!p.started) continue;
-      ctx.save(); ctx.translate(p.x + p.w / 2, p.y + p.h / 2); ctx.rotate(p.rot); ctx.drawImage(p.c, -p.w / 2, -p.h / 2); ctx.restore();
-    }
+  if (!remainCv){ remainCv = document.createElement('canvas'); remainCv.width = art.width; remainCv.height = art.height; remainCv.getContext('2d').drawImage(fgCv, 0, 0); }
+  const rg = remainCv.getContext('2d');
+  ctx.drawImage(bgCv, 0, 0);
+  // ブラックホールが開くと、まわりが暗くなる
+  if (mode === 'hole' && bh && phase !== 'idle' && !result.heal){
+    const k = phase === 'chant' ? Math.min(1, t / 1.2) * .4 : phase === 'flash' ? .6 : phase === 'fall' ? Math.max(0, 1 - Math.max(0, t - MODES.hole.life + 2) / 2) : 0;
+    bh.r = lerp(bh.r, art.width * .07 * k, .1);
+    ctx.fillStyle = `rgba(10,0,30,${.45 * k})`; ctx.fillRect(0, 0, art.width, art.height);
   }
-  // 割れ目：唱えている途中から浮かびあがる
-  if (phase !== 'idle' && !result.heal){ ctx.globalAlpha = phase === 'chant' ? Math.min(1, t / 1.2) * .6 : .7; ctx.drawImage(window.crackCv, 0, 0); ctx.globalAlpha = 1; }
-  // 補強されたとき：金色に光る
+  if (phase === 'chant' || phase === 'flash'){ ctx.save(); ctx.globalAlpha = .5 * Math.min(1, t / .8); ctx.filter = 'blur(6px)'; ctx.drawImage(maskCv, 0, 0); ctx.restore(); }
+  ctx.drawImage(remainCv, 0, 0);
+  // ひび割れ：ピースが落ちる
+  if (mode === 'crack') for (const p of pieces){
+    if (!p.fall || phase === 'idle' || phase === 'chant' || phase === 'flash') continue;
+    const lt = ft - p.delay;
+    if (lt > 0 && !p.done){
+      if (!p.started){ p.started = true; rg.globalCompositeOperation = 'destination-out'; rg.drawImage(p.c, p.x0 - .5, p.y0 - .5, p.w + 1, p.h + 1); rg.globalCompositeOperation = 'source-over';
+        if (R() < .25) crack(); for (let i = 0; i < 5; i++) fx.push({x:p.cx, y:p.cy, vx:(R() - .5) * 60, vy:-R() * 40, t:0, life:1 + R(), s:6 + R() * 10}); }
+      p.vy += 900 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      if (p.y > art.height + 200) p.done = true;
+    }
+    if (p.done || !p.started) continue;
+    ctx.save(); ctx.translate(p.x + p.w / 2, p.y + p.h / 2); ctx.rotate(p.rot); ctx.drawImage(p.c, -p.w / 2, -p.h / 2); ctx.restore();
+  }
+  if (mode === 'crack' && phase === 'chant' && !result.heal){ ctx.globalAlpha = Math.min(1, t / 1.2) * .6; ctx.drawImage(window.crackCv, 0, 0); ctx.globalAlpha = 1; }
+  // マスで消える5種類
+  if (mode !== 'crack' && (phase === 'fall' || phase === 'settle' || phase === 'done')) drawCells(dt, ft, rg);
+  // ブラックホール本体
+  if (mode === 'hole' && bh && bh.r > .5){
+    const rr = bh.r, g = ctx.createRadialGradient(bh.x, bh.y, rr * .6, bh.x, bh.y, rr * 2.4);
+    g.addColorStop(0, 'rgba(255,170,60,.95)'); g.addColorStop(.3, 'rgba(200,80,255,.5)'); g.addColorStop(1, 'rgba(60,0,120,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(bh.x, bh.y, rr * 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(bh.x, bh.y); ctx.rotate(now / 300); ctx.strokeStyle = 'rgba(255,220,160,.7)'; ctx.lineWidth = rr * .12;
+    for (let i = 0; i < 3; i++){ ctx.beginPath(); ctx.ellipse(0, 0, rr * (1.3 + i * .25), rr * (.45 + i * .1), i, 0, Math.PI * 1.3); ctx.stroke(); }
+    ctx.restore(); ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(bh.x, bh.y, rr, 0, Math.PI * 2); ctx.fill();
+  }
   if (result && result.heal && phase !== 'idle'){ ctx.fillStyle = `rgba(255,215,120,${.25 + Math.sin(now / 200) * .1})`; ctx.fillRect(0, 0, art.width, art.height); }
   // 砂ぼこり
   for (const f of fx){ f.t += dt; f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 10 * dt; }
   fx = fx.filter(f => f.t < f.life);
   for (const f of fx){ const a = (1 - f.t / f.life) * .5; ctx.fillStyle = `rgba(200,180,150,${a})`; ctx.beginPath(); ctx.arc(f.x, f.y, f.s * (1 + f.t), 0, Math.PI * 2); ctx.fill(); }
   ctx.restore();
-  // 光の柱と白い閃光
   if (phase === 'chant'){ const a = Math.min(1, t / 1.2); const gx = W / 2, bw = W * .08 * a; const lg = ctx.createLinearGradient(gx - bw, 0, gx + bw, 0); lg.addColorStop(0, 'rgba(255,240,200,0)'); lg.addColorStop(.5, `rgba(255,250,230,${.7 * a})`); lg.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = lg; ctx.fillRect(gx - bw, 0, bw * 2, H); }
-  if (phase === 'flash'){ ctx.fillStyle = `rgba(255,255,240,${1 - t / .55})`; ctx.fillRect(0, 0, W, H); }
+  if (phase === 'flash'){ ctx.fillStyle = mode === 'hole' ? `rgba(40,0,70,${1 - t / .55})` : mode === 'burn' ? `rgba(255,150,50,${1 - t / .55})` : `rgba(255,255,240,${1 - t / .55})`; ctx.fillRect(0, 0, W, H); }
+}
+function drawCells(dt, ft, rg){
+  const Hd = art.height, gy = cells.groundY;
+  for (const c of cells){
+    if (c.dead) continue;
+    const a = ft - c.s; if (a < 0) continue;
+    if (!c.started){
+      c.started = true; rg.clearRect(c.x, c.y, c.cs, c.cs);
+      c.px = c.x; c.py = c.y; c.vx = (R() - .5) * 120; c.vy = -R() * 80; c.sz = c.cs;
+      if (mode === 'hole'){ c.ang = Math.atan2(c.y - bh.y, c.x - bh.x); c.r0 = Math.hypot(c.x - bh.x, c.y - bh.y); c.T = 1.1 + R() * .9; }
+      if (mode === 'melt'){ c.k = .5 + R() * .8 + (Math.sin(c.x * .05) + 1) * .4; c.stop = gy - R() * 8; }
+      if (mode === 'sand'){ c.vx = 40 + R() * 80; c.vy = -20 - R() * 50; }
+    }
+    if (mode === 'shatter'){
+      c.vy += 900 * dt; c.px += c.vx * dt; c.py += c.vy * dt;
+      if (c.py > Hd + 30) c.dead = true;
+      ctx.fillStyle = c.col; ctx.fillRect(c.px, c.py, c.sz, c.sz);
+    } else if (mode === 'sand'){
+      c.vx += (60 + Math.sin(a * 3 + c.y * .05) * 40) * dt; c.vy += (Math.cos(a * 4 + c.x * .03) * 60 - 25) * dt;
+      c.px += c.vx * dt; c.py += c.vy * dt;
+      const al = 1 - a / 1.8; if (al <= 0){ c.dead = true; continue; }
+      const k = Math.min(1, a * 1.2), s = c.sz * (1 - a * .35);
+      ctx.globalAlpha = al; ctx.fillStyle = `rgb(${lerp(c.r, 214, k)|0},${lerp(c.g, 190, k)|0},${lerp(c.b, 150, k)|0})`; ctx.fillRect(c.px, c.py, Math.max(1, s), Math.max(1, s)); ctx.globalAlpha = 1;
+    } else if (mode === 'hole'){
+      const k = Math.min(1, a / c.T), r = c.r0 * (1 - Math.pow(k, 1.6));
+      c.ang += dt * (1.5 + 90 / (r + 10));
+      if (k >= 1){ c.dead = true; continue; }
+      const x = bh.x + Math.cos(c.ang) * r, y = bh.y + Math.sin(c.ang) * r * .85, s = Math.max(.8, c.sz * (.3 + .7 * (1 - k)));
+      ctx.fillStyle = c.col; ctx.fillRect(x, y, s * (1 + k * 2), s);
+    } else if (mode === 'burn'){
+      if (a < .5){ const k = a / .5; ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgb(${lerp(c.r, 255, k)|0},${lerp(c.g, 140, k)|0},${lerp(c.b, 30, k)|0})`; ctx.fillRect(c.px, c.py, c.sz, c.sz); ctx.globalCompositeOperation = 'source-over';
+        if (R() < .06 && flames.length < 260) flames.push({x:c.px + R() * c.sz, y:c.py, vx:(R() - .5) * 20, vy:-40 - R() * 60, t:0, life:.5 + R() * .5, s:3 + R() * 5}); }
+      else if (a < 1.1){ const k = (a - .5) / .6; ctx.fillStyle = `rgb(${lerp(255, 40, k)|0},${lerp(140, 26, k)|0},${lerp(30, 18, k)|0})`; ctx.fillRect(c.px, c.py, c.sz, c.sz); }
+      else { if (!c.ash){ c.ash = true; c.vx = (R() - .5) * 25; c.vy = 10 + R() * 30; }
+        c.vy += 60 * dt; c.px += c.vx * dt; c.py += c.vy * dt; const al = 1 - (a - 1.1) / 1.6; if (al <= 0 || c.py > Hd){ c.dead = true; continue; }
+        ctx.globalAlpha = al; ctx.fillStyle = '#8f8a84'; ctx.fillRect(c.px, c.py, c.sz * .7, c.sz * .7); ctx.globalAlpha = 1; }
+    } else if (mode === 'melt'){
+      c.vy = Math.min(160, (20 + a * 60) * c.k); 
+      if (c.py < c.stop){ c.py = Math.min(c.stop, c.py + c.vy * dt); c.h = c.sz * (1 + Math.min(3, a * 1.5 * c.k)); }
+      else { c.h = Math.max(c.sz * .4, (c.h || c.sz) - dt * 8); c.px += (c.x - (bh ? bh.x : c.x)) * .15 * dt; c.w = (c.w || c.sz) + dt * 4; }
+      const al = a > 4 ? 1 - (a - 4) / 2.5 : 1; if (al <= 0){ c.dead = true; continue; }
+      const dk = Math.min(.45, a * .12);
+      ctx.globalAlpha = al; ctx.fillStyle = `rgb(${c.r * (1 - dk)|0},${c.g * (1 - dk)|0},${c.b * (1 - dk)|0})`;
+      ctx.fillRect(c.px, c.py - (c.h - c.sz), c.w || c.sz, c.h); ctx.globalAlpha = 1;
+    }
+  }
+  // 炎
+  for (const f of flames){ f.t += dt; f.x += f.vx * dt; f.y += f.vy * dt; }
+  flames = flames.filter(f => f.t < f.life);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const f of flames){ const k = f.t / f.life; ctx.fillStyle = `rgba(255,${(200 - k * 150)|0},${(60 - k * 50)|0},${(1 - k) * .8})`; ctx.beginPath(); ctx.arc(f.x, f.y, f.s * (1 - k * .5), 0, Math.PI * 2); ctx.fill(); }
+  ctx.globalCompositeOperation = 'source-over';
 }
 </script>
 </body>
